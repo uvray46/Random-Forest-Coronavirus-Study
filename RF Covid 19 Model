@@ -1,0 +1,260 @@
+from sklearn.datasets import load_iris
+iris = load_iris()
+
+# Model (can also use single decision tree)
+from sklearn.ensemble import RandomForestClassifier
+model = RandomForestClassifier(n_estimators=10)
+
+# Train
+model.fit(iris.data, iris.target)
+
+# Extract single tree
+estimator = model.estimators_[5]
+from sklearn.tree import export_graphviz
+
+# Export as dot file
+export_graphviz(estimator, out_file='tree.dot', 
+                feature_names = iris.feature_names,
+                class_names = iris.target_names,
+                rounded = True, proportion = False, 
+                precision = 2, filled = True)
+
+# Convert to png using system command (requires Graphviz)
+from subprocess import call
+call(['dot', '-Tpng', 'tree.dot', '-o', 'tree.png', '-Gdpi=600'])
+
+# Display in jupyter notebook
+from IPython.display import Image
+Image(filename = 'tree.png')
+
+import os
+import pandas as pd
+from datetime import datetime, timedelta
+import seaborn as sns
+import matplotlib.pyplot as plt
+import numpy as np
+%matplotlib inline
+import plotly.graph_objects as go
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.impute import IterativeImputer
+from sklearn.ensemble import ExtraTreesRegressor
+from sklearn.model_selection import train_test_split
+from sklearn import preprocessing
+from sklearn.metrics import precision_recall_curve, f1_score, auc, classification_report, confusion_matrix, roc_curve, roc_auc_score, accuracy_score, log_loss
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+import itertools
+
+# Define the file path (your provided file path)
+file_path = r"C:\Users\jwhit\OneDrive\Documents\Data Science Course\Random Forest\PatientInfo.csv"
+
+# Load the dataset
+df = pd.read_csv(file_path)
+
+# Display the first few rows of the dataset
+df.head()
+
+# Check the shape of the dataset
+df.shape
+
+# Counts of null values in each column
+na_df = pd.DataFrame(df.isnull().sum().sort_values(ascending=False)).reset_index()
+na_df.columns = ['VarName', 'NullCount']
+
+# Show columns that have missing values
+na_df[na_df['NullCount'] > 0]
+
+# Counts of response variable values
+df.state.value_counts()
+
+# Assuming the year we are working with is 2020
+current_year = 2020
+
+# Create the 'n_age' column by calculating age based on 'birth_year' (assuming 'birth_year' is in the dataset)
+df['n_age'] = current_year - df['birth_year']
+
+# Verify the new column is created and display the first few rows
+df[['birth_year', 'n_age']].head()
+
+# Counts of response variable values in 'state'
+print("Counts of response variable 'state':")
+print(df.state.value_counts())
+
+# Print the number of missing values by column
+print("\nNumber of missing values by column:")
+print(df.isnull().sum())
+
+# Get a summary of the dataset info
+df.info()
+
+# Fill the 'disease' column missing values with 0 and remap True values to 1
+df['disease'] = df['disease'].fillna(0)
+df['disease'] = df['disease'].replace(True, 1)
+
+# Adjust the list of columns based on actual column names
+columns_to_fill_with_mean = ['global_num', 'birth_year', 'infection_order', 'infected_by', 'contact_number']
+
+# Fill missing values in specific columns with their mean
+for column in columns_to_fill_with_mean:
+    if column in df.columns:
+        df[column] = df[column].fillna(df[column].mean())
+    else:
+        print(f"Column '{column}' does not exist in the dataset.")
+
+# Check for any remaining null values
+print("\nRemaining null values after imputation:")
+print(df.isnull().sum())
+
+# Display the first few rows of the dataset again
+df.head()
+
+# Drop unnecessary columns related to dates
+df = df.drop(['symptom_onset_date', 'confirmed_date', 'released_date', 'deceased_date'], axis=1)
+
+# Print the number of unique values in each column
+print(df.nunique())
+
+# Print the proportion of unique values for each column compared to the total number of rows
+print(df.nunique() / df.shape[0])
+
+# Get descriptive statistics for numerical columns
+df.describe().T
+
+# Check for duplicate rows
+duplicateRowsDF = df[df.duplicated()]
+duplicateRowsDF
+
+# Select only object type columns (excluding datetime) for further analysis
+dfo = df.select_dtypes(include=['object'], exclude=['datetime'])
+dfo.shape
+
+# Get levels (unique counts) for all object type variables
+vn = pd.DataFrame(dfo.nunique()).reset_index()
+vn.columns = ['VarName', 'LevelsCount']
+
+# Sort variables by the number of levels in descending order
+vn.sort_values(by='LevelsCount', ascending=False)
+vn
+
+# Select only numeric columns from the dataframe for the correlation matrix
+numeric_columns = ['patient_id', 'global_num', 'birth_year', 'disease', 'infection_order', 'infected_by', 'contact_number', 'n_age']
+
+# Create a new dataframe with only these columns
+numeric_df = df[numeric_columns]
+
+# Compute correlation matrix
+plt.figure(figsize=(12, 8))
+corr = numeric_df.corr()
+
+# Plot heatmap
+sns.heatmap(corr, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5)
+plt.title("Correlation Heatmap of Features")
+plt.show()
+
+# Plot boxplots to check for outliers in numerical features
+numerical_columns = df.select_dtypes(include=[np.number]).columns
+
+plt.figure(figsize=(12, 8))
+df[numerical_columns].boxplot()
+plt.xticks(rotation=90)
+plt.title("Boxplot of Numerical Features to Check for Outliers")
+plt.show()
+
+# Create dummy features for object-type features (one-hot encoding)
+df = pd.get_dummies(df, drop_first=True)
+
+# Verify the new columns created after one-hot encoding
+print("\nDataframe after creating dummy features:")
+print(df.head())
+
+# Check if 'state' column exists
+print(df.columns)
+
+# For binary classification (isolated vs. released)
+X = df.drop(['state_isolated', 'state_released'], axis=1)
+y = df['state_isolated']
+
+# Train-test split
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=1)
+
+# Scale data using StandardScaler
+scaler = preprocessing.StandardScaler().fit(X_train)
+X_train_scaled = scaler.transform(X_train)
+X_test_scaled = scaler.transform(X_test)
+
+# Random Forest classifier
+clf = RandomForestClassifier(n_estimators=300, random_state=1, n_jobs=-1)
+model_res = clf.fit(X_train_scaled, y_train)
+y_pred = model_res.predict(X_test_scaled)
+y_pred_prob = model_res.predict_proba(X_test_scaled)
+lr_probs = y_pred_prob[:, 1]
+
+# Accuracy and F1 score
+ac = accuracy_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred, average='weighted')
+
+# Confusion matrix
+cm = confusion_matrix(y_test, y_pred)
+
+print('Random Forest: Accuracy=%.3f' % (ac))
+print('Random Forest: F1-score=%.3f' % (f1))
+
+# Define class names based on your target variable's categories
+class_names = ['isolated', 'released', 'missing', 'deceased']  # Adjust these names if needed
+
+# Plotting confusion matrix function
+def plot_confusion_matrix(cm, classes, normalize=False, title='Confusion matrix', cmap=plt.cm.Blues):
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print('Confusion matrix, without normalization')
+
+    print(cm)
+
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes, rotation=45)
+    plt.yticks(tick_marks, classes)
+
+    fmt = '.2f' if normalize else 'd'
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        plt.text(j, i, format(cm[i, j], fmt),
+                 horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black")
+
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
+    plt.tight_layout()
+
+# Compute confusion matrix
+cnf_matrix = confusion_matrix(y_test, y_pred)
+np.set_printoptions(precision=2)
+
+# Plot non-normalized confusion matrix
+plt.figure()
+plot_confusion_matrix(cnf_matrix, classes=class_names, title='Confusion matrix, without normalization')
+
+# Plot normalized confusion matrix
+plt.figure()
+plot_confusion_matrix(cnf_matrix, classes=class_names, normalize=True, title='Normalized confusion matrix')
+
+plt.show()
+
+feature_importance = clf.feature_importances_
+# make importances relative to max importance
+feature_importance = 100.0 * (feature_importance / feature_importance.max())[:30]
+sorted_idx = np.argsort(feature_importance)[:30]
+
+pos = np.arange(sorted_idx.shape[0]) + .5
+print(pos.size)
+sorted_idx.size
+plt.figure(figsize=(10,10))
+plt.barh(pos, feature_importance[sorted_idx], align='center')
+plt.yticks(pos, X.columns[sorted_idx])
+plt.xlabel('Relative Importance')
+plt.title('Variable Importance')
+plt.show()
